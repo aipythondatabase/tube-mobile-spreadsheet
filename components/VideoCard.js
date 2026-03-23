@@ -78,7 +78,7 @@ const VideoCard = ({ video, role, onPlay, onRefresh, onHistory, isSelectable, is
 const styles = StyleSheet.create({
   cardContainer: {
     width: cardWidth,
-    aspectRatio: 1.3, // 16:9に近い比率にして縦長感を解消
+    aspectRatio: 1.5, // 16:9(1.77)より少しだけ縦長に変更
     backgroundColor: '#000',
     margin: 0.5,
     position: 'relative',

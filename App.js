@@ -10,10 +10,15 @@ import RegisterScreen from './screens/RegisterScreen';
 import HomeScreen from './screens/HomeScreen';
 import VideoPlayerScreen from './screens/VideoPlayerScreen';
 import ProfileScreen from './screens/ProfileScreen';
-import { ExploreScreen, CreateScreen, LibraryScreen } from './screens/PlaceholderScreens';
+import AnalysisScreen from './screens/AnalysisScreen';
+import PostScreen from './screens/PostScreen';
+import RealtimeScreen from './screens/RealtimeScreen';
+import { SettingsScreen } from './screens/PlaceholderScreens';
 
 // 認証状態を管理するためのContext
 export const AuthContext = createContext();
+// 設定（精度低下・カオス度など）を管理するためのContext
+export const SettingsContext = createContext();
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -26,13 +31,10 @@ function TabNavigator() {
         tabBarIcon: ({ focused, color, size }) => {
           let iconName;
           if (route.name === 'Home') iconName = focused ? 'eye' : 'eye-outline';
-          else if (route.name === 'Explore') iconName = focused ? 'compass' : 'explore-outline'; // explorer
-          else if (route.name === 'Create') iconName = focused ? 'add-circle' : 'add-circle-outline';
-          else if (route.name === 'Library') iconName = focused ? 'library' : 'library-outline';
-          else if (route.name === 'Profile') iconName = focused ? 'person' : 'person-outline';
-
-          // 特殊なアイコン名調整 (Ioniconsのバージョン対応)
-          if (route.name === 'Explore') iconName = focused ? 'search' : 'search-outline';
+          else if (route.name === 'Analysis') iconName = focused ? 'bar-chart' : 'bar-chart-outline';
+          else if (route.name === 'Post') iconName = focused ? 'add-circle' : 'add-circle-outline';
+          else if (route.name === 'Realtime') iconName = focused ? 'pulse' : 'pulse-outline';
+          else if (route.name === 'Settings') iconName = focused ? 'settings' : 'settings-outline';
 
           return <Ionicons name={iconName} size={size} color={color} />;
         },
@@ -48,10 +50,10 @@ function TabNavigator() {
       })}
     >
       <Tab.Screen name="Home" component={HomeScreen} options={{ title: 'ホーム' }} />
-      <Tab.Screen name="Explore" component={ExploreScreen} options={{ title: '探索' }} />
-      <Tab.Screen name="Create" component={CreateScreen} options={{ title: '作成' }} />
-      <Tab.Screen name="Library" component={LibraryScreen} options={{ title: 'ライブラリ' }} />
-      <Tab.Screen name="Profile" component={ProfileScreen} options={{ title: 'プロフィール' }} />
+      <Tab.Screen name="Analysis" component={AnalysisScreen} options={{ title: '分析' }} />
+      <Tab.Screen name="Post" component={PostScreen} options={{ title: '投稿' }} />
+      <Tab.Screen name="Realtime" component={RealtimeScreen} options={{ title: 'リアルタイム' }} />
+      <Tab.Screen name="Settings" component={SettingsScreen} options={{ title: '設定' }} />
     </Tab.Navigator>
   );
 }
@@ -59,6 +61,18 @@ function TabNavigator() {
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // 精度設定の状態
+  const [settings, setSettings] = useState({
+    chaosLevel: 0.2,       // カオス度
+    minorLevel: 0.1,       // マイナー度
+    personalizedLevel: 0.7, // パーソナライズ度
+    regionIndex: 0         // 地域設定インデックス（0:JP, 1:US, 2:IL...）
+  });
+
+  const updateSetting = (key, value) => {
+    setSettings(prev => ({ ...prev, [key]: value }));
+  };
 
   useEffect(() => {
     checkAuth();
@@ -81,42 +95,44 @@ export default function App() {
 
   return (
     <AuthContext.Provider value={{ user, setUser }}>
-      <NavigationContainer>
-        <Stack.Navigator>
-          {user ? (
-            <>
-              <Stack.Screen
-                name="MainTabs"
-                component={TabNavigator}
-                options={{ headerShown: false }}
-              />
-              <Stack.Screen
-                name="VideoPlayer"
-                component={VideoPlayerScreen}
-                options={{ 
-                  title: '動画再生', 
-                  headerBackTitle: '戻る',
-                  headerStyle: { backgroundColor: '#1a1614' },
-                  headerTintColor: '#e6d5c3',
-                }}
-              />
-            </>
-          ) : (
-            <>
-              <Stack.Screen
-                name="Login"
-                component={LoginScreen}
-                options={{ headerShown: false }}
-              />
-              <Stack.Screen
-                name="Register"
-                component={RegisterScreen}
-                options={{ headerShown: false }}
-              />
-            </>
-          )}
-        </Stack.Navigator>
-      </NavigationContainer>
+      <SettingsContext.Provider value={{ settings, updateSetting }}>
+        <NavigationContainer>
+          <Stack.Navigator>
+            {user ? (
+              <>
+                <Stack.Screen
+                  name="MainTabs"
+                  component={TabNavigator}
+                  options={{ headerShown: false }}
+                />
+                <Stack.Screen
+                  name="VideoPlayer"
+                  component={VideoPlayerScreen}
+                  options={{ 
+                    title: '動画再生', 
+                    headerBackTitle: '戻る',
+                    headerStyle: { backgroundColor: '#1a1614' },
+                    headerTintColor: '#e6d5c3',
+                  }}
+                />
+              </>
+            ) : (
+              <>
+                <Stack.Screen
+                  name="Login"
+                  component={LoginScreen}
+                  options={{ headerShown: false }}
+                />
+                <Stack.Screen
+                  name="Register"
+                  component={RegisterScreen}
+                  options={{ headerShown: false }}
+                />
+              </>
+            )}
+          </Stack.Navigator>
+        </NavigationContainer>
+      </SettingsContext.Provider>
     </AuthContext.Provider>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useContext } from 'react';
 import { 
   View, 
   Text, 
@@ -21,6 +21,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { youtubeApi } from '../services/youtubeApi';
 import VideoCard from '../components/VideoCard';
 import { Ionicons } from '@expo/vector-icons';
+import { SettingsContext } from '../App';
 
 const { width } = Dimensions.get('window');
 const BLOCKED_VIDEOS_KEY = 'blocked_videos_abyss';
@@ -66,8 +67,8 @@ const MemoryLayer = ({ history, onClose, onVideoPlay }) => {
 };
 
 export default function HomeScreen({ navigation }) {
+  const { settings } = useContext(SettingsContext);
   const [rows, setRows] = useState([]); 
-  const [stock, setStock] = useState([]); 
   const [loading, setLoading] = useState(true);
   const [isRefreshingStock, setIsRefreshingStock] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -80,6 +81,8 @@ export default function HomeScreen({ navigation }) {
   const [isBlockMode, setIsBlockMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [blockedIds, setBlockedIds] = useState(new Set());
+
+  const [historyKeywords, setHistoryKeywords] = useState([]);
 
   const isFetchingRef = useRef(false);
 
@@ -106,10 +109,25 @@ export default function HomeScreen({ navigation }) {
     } catch (e) { console.error(e); }
   };
 
+  // 履歴からキーワードを抽出する
+  const extractKeywordsFromHistory = useCallback(async () => {
+    try {
+      const historyData = await AsyncStorage.getItem('watch_history'); 
+      if (historyData) {
+        const history = JSON.parse(historyData);
+        const keywords = history.slice(0, 5).map(v => v.title?.split(' ')?.[0]).filter(Boolean);
+        setHistoryKeywords([...new Set(keywords)]);
+        return keywords;
+      }
+      return [];
+    } catch (e) { console.error(e); return []; }
+  }, []);
+
   const initialLoad = async () => {
     try {
       setLoading(true);
-      const fetchedVideos = await youtubeApi.getPopularVideos(100);
+      const keywords = await extractKeywordsFromHistory();
+      const fetchedVideos = await youtubeApi.getAdvancedVideos(40, settings, keywords);
       const filtered = fetchedVideos.filter(v => !blockedIds.has(v.id?.videoId || v.id));
       
       const initialRows = [];
@@ -118,65 +136,53 @@ export default function HomeScreen({ navigation }) {
       }
       setRows(initialRows);
       setAbyssRows(initialRows); // アビスの初期状態を保存
-      setStock(filtered.slice(40));
     } catch (error) { console.error(error); } finally { setLoading(false); }
   };
 
-  const replenishStock = async () => {
-    if (isFetchingRef.current || isSearching) return; // 検索中は補充しない
+  const handleRefreshRow = useCallback(async (rowIndex) => {
+    if (isSearching || isFetchingRef.current) return;
+    isFetchingRef.current = true;
+    try {
+      const fetchedVideos = await youtubeApi.getAdvancedVideos(4, settings, historyKeywords);
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setRows(prevRows => {
+        const newRows = [...prevRows];
+        const targetRow = { ...newRows[rowIndex] };
+        targetRow.history = [...targetRow.history, targetRow.current];
+        targetRow.current = fetchedVideos;
+        newRows[rowIndex] = targetRow;
+        if (!isSearching) setAbyssRows(newRows);
+        return newRows;
+      });
+    } catch (e) { console.error(e); } finally {
+      isFetchingRef.current = false;
+    }
+  }, [settings, historyKeywords, isSearching]);
+
+  const handleRefreshAll = useCallback(async () => {
+    if (isSearching || isFetchingRef.current) return;
     isFetchingRef.current = true;
     setIsRefreshingStock(true);
     try {
-      const newVideos = await youtubeApi.getPopularVideos(50);
-      const filtered = newVideos.filter(v => !blockedIds.has(v.id?.videoId || v.id));
-      setStock(prev => [...prev, ...filtered]);
+      const fetchedVideos = await youtubeApi.getAdvancedVideos(rows.length * 4, settings, historyKeywords);
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setRows(prevRows => {
+        let currentIdx = 0;
+        const newRows = prevRows.map(row => {
+          const updatedRow = { ...row };
+          updatedRow.history = [...updatedRow.history, updatedRow.current];
+          updatedRow.current = fetchedVideos.slice(currentIdx, currentIdx + 4);
+          currentIdx += 4;
+          return updatedRow;
+        });
+        if (!isSearching) setAbyssRows(newRows);
+        return newRows;
+      });
     } catch (e) { console.error(e); } finally {
       isFetchingRef.current = false;
       setIsRefreshingStock(false);
     }
-  };
-
-  const handleRefreshRow = useCallback((rowIndex) => {
-    if (isSearching) return; // 検索中はリフレッシュ無効（または検索結果のシャッフルなど別の挙動にすべきか）
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setRows(prevRows => {
-      const newRows = [...prevRows];
-      const targetRow = { ...newRows[rowIndex] };
-      targetRow.history = [...targetRow.history, targetRow.current];
-      if (stock.length >= 4) {
-        targetRow.current = stock.slice(0, 4);
-        setStock(prev => prev.slice(4));
-      }
-      newRows[rowIndex] = targetRow;
-      setAbyssRows(newRows); // アビスの状態を更新
-      return newRows;
-    });
-    if (stock.length <= 12) replenishStock();
-  }, [stock, blockedIds, isSearching]);
-
-  const handleRefreshAll = useCallback(() => {
-    if (isSearching) return;
-    if (stock.length < rows.length * 4) {
-      replenishStock();
-      Alert.alert('読み込み中', '動画リストを更新しています。少々お待ちください。');
-      return;
-    }
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setRows(prevRows => {
-      let currentStock = [...stock];
-      const newRows = prevRows.map(row => {
-        const updatedRow = { ...row };
-        updatedRow.history = [...updatedRow.history, updatedRow.current];
-        updatedRow.current = currentStock.slice(0, 4);
-        currentStock = currentStock.slice(4);
-        return updatedRow;
-      });
-      setStock(currentStock);
-      setAbyssRows(newRows); // アビスの状態を更新
-      return newRows;
-    });
-    if (stock.length <= 20) replenishStock();
-  }, [rows, stock, isSearching]);
+  }, [rows, settings, historyKeywords, isSearching]);
 
   const toggleSelect = (videoId) => {
     const newSelected = new Set(selectedIds);
@@ -195,26 +201,28 @@ export default function HomeScreen({ navigation }) {
         await AsyncStorage.setItem(BLOCKED_VIDEOS_KEY, JSON.stringify([...newBlocked]));
         setBlockedIds(newBlocked);
         
-        // stockを直接変更（shift）せず、コピーを作成して処理する
-        let currentStock = [...stock];
-        
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        setRows(prev => {
-          const updated = prev.map(row => ({
-            ...row,
-            current: row.current.map(v => {
-              const vId = v.id?.videoId || v.id;
-              if (selectedIds.has(vId)) {
-                return currentStock.length > 0 ? currentStock.shift() : v;
-              }
-              return v;
-            })
-          }));
-          if (!isSearching) setAbyssRows(updated);
-          return updated;
-        });
-        
-        setStock(currentStock);
+        // 削除した分をAPIから直接補充する
+        try {
+          const replacementVideos = await youtubeApi.getAdvancedVideos(selectedIds.size, settings, historyKeywords);
+          
+          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+          setRows(prev => {
+            let replIdx = 0;
+            const updated = prev.map(row => ({
+              ...row,
+              current: row.current.map(v => {
+                const vId = v.id?.videoId || v.id;
+                if (selectedIds.has(vId)) {
+                  return replacementVideos[replIdx++] || v;
+                }
+                return v;
+              })
+            }));
+            if (!isSearching) setAbyssRows(updated);
+            return updated;
+          });
+        } catch (e) { console.error(e); }
+
         setSelectedIds(new Set());
         setIsBlockMode(false);
       }}
@@ -274,7 +282,6 @@ export default function HomeScreen({ navigation }) {
       <View style={[styles.megaHeader, isSearching && styles.searchHeader]}>
         <View style={styles.headerStatusRow}>
           <Text style={[styles.systemStatus, isSearching && styles.searchStatusText]}>{isBlockMode ? 'ブロックモード実行中' : isSearching ? `検索：${lastSearchQuery} [SCANNING...]` : 'システム：正常'}</Text>
-          <Text style={styles.bufferText}>ストック: {stock.length}</Text>
         </View>
 
         <View style={styles.headerMainRow}>
