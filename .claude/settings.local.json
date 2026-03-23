@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(timeout 5 cat:*)",
+      "Bash(start:*)",
+      "Bash(exist:*)",
+      "Bash(rm:*)",
+      "Bash(npx expo:*)",
+      "Bash(jj status:*)",
+      "Bash(git:*)",
+      "Bash(gh:*)"
+    ]
+  }
+}
